@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Debug-only overlay: lets the running app draw over the lock screen so visual
+  QA screenshots can be captured without unlocking the test device.
+  Nothing here ships in the release build.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <application>
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            tools:replace="android:showWhenLocked,android:turnScreenOn" />
+    </application>
+</manifest>

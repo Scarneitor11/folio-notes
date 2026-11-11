@@ -1,0 +1,28 @@
+# Gradle and build output
+.gradle/
+.kotlin/
+build/
+local.properties
+
+# Signing material - these must never be committed
+keystore.properties
+*.keystore
+*.jks
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Captured device screenshots
+shots/
+
+# Local work logs and handoff context
+*.log
+REMAINING_CONTEXT.md
+
+# Packaged local artifacts
+/dist/
+
+# Agent workspace state
+.freebuff/

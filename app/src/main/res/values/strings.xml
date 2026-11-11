@@ -178,6 +178,8 @@
     <string name="settings_export_sub">Write every note to a file</string>
     <string name="settings_import">Import JSON</string>
     <string name="settings_import_sub">Merge a Folio backup into this library</string>
+    <string name="settings_keep_import">Import from Google Keep</string>
+    <string name="settings_keep_import_sub">Choose a Takeout ZIP, or a Keep JSON/HTML/text file</string>
     <string name="settings_samples">Add sample notes</string>
     <string name="settings_samples_added">Samples added</string>
     <string name="settings_samples_sub">A small tour of the markdown dialect</string>
@@ -202,6 +204,14 @@
     <string name="toast_export_failed">Export failed</string>
     <string name="toast_imported">Imported %1$s</string>
     <string name="toast_import_failed">That file is not a Folio backup</string>
+    <string name="toast_keep_importing">Reading Google Keep notes…</string>
+    <plurals name="toast_keep_imported">
+        <item quantity="one">Imported %1$d Google Keep note</item>
+        <item quantity="other">Imported %1$d Google Keep notes</item>
+    </plurals>
+    <string name="toast_keep_import_empty">No Google Keep notes found in that file</string>
+    <string name="toast_keep_import_failed">Could not read that Google Keep export</string>
+    <string name="toast_keep_none_new">Those Google Keep notes are already in Folio</string>
 
     <!-- Find, replace and sharing -->
     <string name="editor_find_replace">Find &amp; replace</string>

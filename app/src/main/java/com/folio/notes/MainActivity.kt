@@ -1,5 +1,6 @@
 package com.folio.notes
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.os.Build
@@ -12,6 +13,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -29,10 +31,14 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var store: SettingsStore
     private lateinit var repository: NotesRepository
+    private val sharedText = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val splash = installSplashScreen()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) {
+            extractSharedText(intent)?.let { sharedText.value = it }
+        }
 
         store = SettingsStore(applicationContext)
         repository = NotesRepository(FolioDatabase(applicationContext), lifecycleScope)
@@ -66,6 +72,8 @@ class MainActivity : ComponentActivity() {
                         settings = settings,
                         repository = repository,
                         versionName = BuildConfig.VERSION_NAME,
+                        sharedText = sharedText.value,
+                        onSharedTextConsumed = { sharedText.value = null },
                         onSettings = { transform -> store.update(transform) },
                     )
                 }
@@ -84,6 +92,21 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         if (::store.isInitialized) applyRefreshMode(store.current.highRefresh)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        extractSharedText(intent)?.let { sharedText.value = it }
+    }
+
+    private fun extractSharedText(intent: Intent?): String? {
+        val value = when (intent?.action) {
+            Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)
+            Intent.ACTION_PROCESS_TEXT -> intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)
+            else -> null
+        }
+        return value?.toString()?.trim()?.takeIf { it.isNotEmpty() }
     }
 
     /**

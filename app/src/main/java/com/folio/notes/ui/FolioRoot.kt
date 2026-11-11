@@ -2,6 +2,7 @@ package com.folio.notes.ui
 
 import android.content.Context
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
@@ -10,6 +11,7 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -26,6 +28,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -51,12 +54,17 @@ import com.folio.notes.data.Note
 import com.folio.notes.data.NotesRepository
 import com.folio.notes.data.SortMode
 import com.folio.notes.logic.FolioSchemes
+import com.folio.notes.logic.KeepImport
+import com.folio.notes.logic.asFolioNote
 import com.folio.notes.ui.components.FolioDialog
 import com.folio.notes.ui.components.FolioDialogActions
 import com.folio.notes.ui.components.FolioDialogBody
 import com.folio.notes.ui.components.FolioDialogTitle
 import com.folio.notes.ui.components.NoteAction
+import com.folio.notes.ui.components.LocalOverlayBlur
 import com.folio.notes.ui.components.NoteActionSheet
+import com.folio.notes.ui.components.overlayBackdropBlur
+import com.folio.notes.ui.components.rememberOverlayBlurState
 import com.folio.notes.ui.components.expandFrom
 import com.folio.notes.ui.screens.EditorScreen
 import com.folio.notes.ui.screens.HomeScreen
@@ -65,6 +73,7 @@ import com.folio.notes.ui.screens.TagsScreen
 import com.folio.notes.ui.theme.LocalFolioMotion
 import com.folio.notes.ui.theme.LocalFolioSettings
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -118,12 +127,15 @@ fun FolioRoot(
     versionName: String,
     onSettings: ((FolioSettings) -> FolioSettings) -> Unit,
     modifier: Modifier = Modifier,
+    sharedText: String? = null,
+    onSharedTextConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val motion = LocalFolioMotion.current
     val scheme = MaterialTheme.colorScheme
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+    val overlayBlur = rememberOverlayBlurState()
 
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var feed by remember { mutableStateOf(Feed.ALL) }
@@ -155,6 +167,47 @@ fun FolioRoot(
 
     fun toast(message: String) {
         scope.launch { snackbar.showSnackbar(message) }
+    }
+
+    fun importKeep(uri: Uri) {
+        toast(context.getString(R.string.toast_keep_importing))
+        scope.launch {
+            val parsed = withContext(Dispatchers.IO) {
+                runCatching {
+                    val name = readDisplayName(context, uri)
+                    val mime = context.contentResolver.getType(uri).orEmpty()
+                    val isZip = name.endsWith(".zip", ignoreCase = true) ||
+                        mime == "application/zip" ||
+                        mime == "application/x-zip-compressed"
+                    context.contentResolver.openInputStream(uri)?.use { stream ->
+                        if (isZip) {
+                            // Keep archives can contain large attachments; parse the ZIP
+                            // entries directly and never load those attachment bytes.
+                            KeepImport.parseZip(stream)
+                        } else {
+                            val bytes = KeepImport.readLimited(stream) ?: error("too large")
+                            KeepImport.parse(name, bytes)
+                        }
+                    } ?: error("empty import")
+                }.getOrNull()
+            }
+            if (parsed == null || parsed.notes.isEmpty()) {
+                toast(
+                    context.getString(
+                        if (parsed == null) R.string.toast_keep_import_failed else R.string.toast_keep_import_empty,
+                    ),
+                )
+                return@launch
+            }
+            val before = repository.notes.value.size
+            repository.appendAll(parsed.notes.map { it.asFolioNote() })
+            val added = repository.notes.value.size - before
+            if (added <= 0) {
+                toast(context.getString(R.string.toast_keep_none_new))
+            } else {
+                toast(context.resources.getQuantityString(R.plurals.toast_keep_imported, added, added))
+            }
+        }
     }
 
     // The editor handles its own back press so a pending autosave is flushed first.
@@ -193,13 +246,17 @@ fun FolioRoot(
             }
         }
         return if (screenMovesForward(from, to)) {
-            slideInHorizontally(panSpec) { width -> width } togetherWith
-                slideOutHorizontally(panSpec) { width -> -width / 4 }
+            (slideInHorizontally(panSpec) { width -> width } +
+                fadeIn(tween(motion.millis(220)))) togetherWith
+                (slideOutHorizontally(panSpec) { width -> -width / 4 } +
+                    fadeOut(tween(motion.millis(180))))
         } else {
             // Mirror of the push: the list comes back from a quarter width out and
             // the screen being closed travels the full width to the right.
-            slideInHorizontally(panSpec) { width -> -width / 4 } togetherWith
-                slideOutHorizontally(panSpec) { width -> width }
+            (slideInHorizontally(panSpec) { width -> -width / 4 } +
+                fadeIn(tween(motion.millis(220)))) togetherWith
+                (slideOutHorizontally(panSpec) { width -> width } +
+                    fadeOut(tween(motion.millis(180))))
         }
     }
 
@@ -244,6 +301,22 @@ fun FolioRoot(
         screen = Screen.Editor(note.id, openTint = openTint, origin = origin)
     }
 
+    // Text shared from another app becomes a normal Folio note. Wait for the
+    // initial database read so the new note cannot be overwritten by load().
+    LaunchedEffect(sharedText) {
+        val incoming = sharedText?.trim().orEmpty()
+        if (incoming.isEmpty()) return@LaunchedEffect
+        repository.loaded.first { it }
+        val note = repository.create()
+        repository.save(note.copy(body = incoming))
+        feed = Feed.ALL
+        query = ""
+        tagFilter = null
+        openEditor(note)
+        onSharedTextConsumed()
+    }
+
+    CompositionLocalProvider(LocalOverlayBlur provides overlayBlur) {
     Box(
         modifier
             .fillMaxSize()
@@ -253,7 +326,11 @@ fun FolioRoot(
             targetState = screen,
             transitionSpec = { transformFor(initialState, targetState) },
             label = "screens",
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .overlayBackdropBlur(
+                    active = overlayBlur.depth > 0 || sheetNote != null || pending != null,
+                ),
         ) { current ->
             when (current) {
                 Screen.Home -> HomeScreen(
@@ -343,6 +420,7 @@ fun FolioRoot(
                     onBack = { screen = Screen.Home },
                     onExport = { uri -> exportTo(context, uri, notes, ::toast) },
                     onImport = { uri -> importFrom(context, uri, repository, ::toast) },
+                    onImportKeep = ::importKeep,
                     onEmptyTrash = {
                         pending = Pending.ConfirmEmptyTrash(notes.count { it.trashed })
                     },
@@ -451,6 +529,7 @@ fun FolioRoot(
 
         null -> Unit
     }
+    }
 }
 
 private fun exportTo(
@@ -469,6 +548,16 @@ private fun exportTo(
     }.onFailure {
         toast(context.getString(R.string.toast_export_failed))
     }
+}
+
+private fun readDisplayName(context: Context, uri: Uri): String {
+    val projection = arrayOf(OpenableColumns.DISPLAY_NAME)
+    val name = runCatching {
+        context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    }.getOrNull()
+    return name?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment ?: "google-keep-import"
 }
 
 private fun importFrom(

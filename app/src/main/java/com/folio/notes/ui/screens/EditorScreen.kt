@@ -116,6 +116,7 @@ import com.folio.notes.ui.components.FolioMark
 import com.folio.notes.ui.components.GlassPanel
 import com.folio.notes.ui.components.MarkdownBody
 import com.folio.notes.ui.components.MiniIconButton
+import com.folio.notes.ui.components.OverlayBlurEffect
 import com.folio.notes.ui.components.Reveal
 import com.folio.notes.ui.components.Rise
 import com.folio.notes.ui.components.RollingContent
@@ -182,6 +183,8 @@ fun EditorScreen(
     var replaceHistory by remember(note.id) { mutableStateOf<List<ReplaceUndo>>(emptyList()) }
     var replaceRedo by remember(note.id) { mutableStateOf<List<ReplaceUndo>>(emptyList()) }
     var templatesOpen by remember { mutableStateOf(false) }
+    // Menus and their dialogs are separate windows; mark the editor as the blurred backdrop.
+    OverlayBlurEffect(menuOpen || tagDialog || templatesOpen)
     val bodyFocus = remember { FocusRequester() }
     val undoSnackbar = remember { SnackbarHostState() }
     // Body stats are read by both the edit and preview toolbars; one scan per edit.

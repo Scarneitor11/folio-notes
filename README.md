@@ -1,6 +1,6 @@
 # Folio Notes
 
-Folio is a local-first notes app for Android, built with Kotlin and Jetpack Compose. It pairs a quiet, paper-like editor with a flexible home feed: markdown-lite formatting, preview mode, search and replace, checklists, templates, tags, pinning, archiving, trash, and JSON backup/restore.
+Folio is a local-first notes app for Android, built with Kotlin and Jetpack Compose. It pairs a quiet, paper-like editor with a flexible home feed: markdown-lite formatting, preview mode, search and replace, checklists, templates, tags, pinning, archiving, trash, and JSON backup/restore. It can import Google Keep Takeout archives (JSON, HTML, and ZIP) while preserving checklists, labels, colors, pinned/archive/trash state, and timestamps, and it can receive text shared from other apps.
 
 ## Requirements
 
@@ -26,6 +26,7 @@ Release builds require signing configuration at `~/.folio-signing/keystore.prope
 - Notes are stored only in the app's private SQLite database.
 - The app requests only the vibration permission; it has no network permission and no analytics.
 - Android backup is disabled, and backup/restore is user-controlled through exported JSON.
+- Google Keep imports are parsed entirely on the device; no upload or network permission is involved.
 
 ## Verification
 

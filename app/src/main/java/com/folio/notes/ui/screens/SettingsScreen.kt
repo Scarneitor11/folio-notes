@@ -45,6 +45,7 @@ import androidx.compose.material.icons.rounded.Lightbulb
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Vibration
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.CloudDownload
 import androidx.compose.material.icons.rounded.DeleteSweep
 import androidx.compose.material.icons.rounded.FileDownload
 import androidx.compose.material.icons.rounded.FileUpload
@@ -123,6 +124,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onExport: (Uri) -> Unit,
     onImport: (Uri) -> Unit,
+    onImportKeep: (Uri) -> Unit,
     onEmptyTrash: () -> Unit,
     onSeedSamples: () -> Unit,
     modifier: Modifier = Modifier,
@@ -152,6 +154,10 @@ fun SettingsScreen(
     val importer = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> if (uri != null) onImport(uri) }
+
+    val keepImporter = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) onImportKeep(uri) }
 
     Box(modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize(), accent = accent, blur = settings.blur)
@@ -489,6 +495,26 @@ fun SettingsScreen(
                         onClick = {
                             haptic(Haptic.Tap)
                             importer.launch(arrayOf("application/json", "text/plain", "*/*"))
+                        },
+                    )
+
+                    Divider()
+
+                    ActionRow(
+                        icon = Icons.Rounded.CloudDownload,
+                        title = stringResource(R.string.settings_keep_import),
+                        subtitle = stringResource(R.string.settings_keep_import_sub),
+                        onClick = {
+                            haptic(Haptic.Tap)
+                            keepImporter.launch(
+                                arrayOf(
+                                    "application/zip",
+                                    "application/json",
+                                    "text/html",
+                                    "text/plain",
+                                    "*/*",
+                                ),
+                            )
                         },
                     )
 

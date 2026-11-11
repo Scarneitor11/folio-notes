@@ -449,6 +449,7 @@ fun FolioDialog(
     val settings = LocalFolioSettings.current
     val dark = LocalFolioDark.current
     val scheme = MaterialTheme.colorScheme
+    OverlayBlurEffect(true)
     val scope = rememberCoroutineScope()
 
     var shown by remember { mutableStateOf(false) }

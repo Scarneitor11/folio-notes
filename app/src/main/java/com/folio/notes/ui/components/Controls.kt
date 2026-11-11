@@ -315,6 +315,7 @@ fun SortButton(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
+    OverlayBlurEffect(open)
     val motion = LocalFolioMotion.current
     val interaction = remember { MutableInteractionSource() }
     val spin by animateFloatAsState(
@@ -549,6 +550,7 @@ fun NoteActionSheet(
     onAction: (NoteAction) -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    OverlayBlurEffect(true)
     val scheme = MaterialTheme.colorScheme
     val haptic = rememberHaptics()
     ModalBottomSheet(

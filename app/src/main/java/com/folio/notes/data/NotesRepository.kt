@@ -38,7 +38,11 @@ class NotesRepository(
 
     fun load() {
         scope.launch {
-            val stored = withContext(io) { database.loadAll() }
+            // A damaged database must not leave the splash screen up forever. The
+            // store still opens, just empty, and a later write can repair it.
+            val stored = runCatching { withContext(io) { database.loadAll() } }
+                .onFailure { Log.e(TAG, "Note load failed", it) }
+                .getOrDefault(emptyList())
             _notes.value = stored
             _loaded.value = true
         }
@@ -76,6 +80,25 @@ class NotesRepository(
     fun unarchive(id: String) = mutate(id) { it.copy(archived = false, updatedAt = clock()) }
     fun togglePin(id: String) = mutate(id) { it.copy(pinned = !it.pinned, updatedAt = clock()) }
     fun setTint(id: String, tint: Int) = mutate(id) { it.copy(tint = tint) }
+
+    fun pinMany(ids: Set<String>) = mutateMany(ids) { it.copy(pinned = true) }
+    fun archiveMany(ids: Set<String>) = mutateMany(ids) { it.copy(archived = true, pinned = false) }
+    fun unarchiveMany(ids: Set<String>) = mutateMany(ids) { it.copy(archived = false) }
+    fun trashMany(ids: Set<String>) = mutateMany(ids) { it.copy(trashed = true, pinned = false) }
+
+    /** One state emission and one transaction for a selection action. */
+    private fun mutateMany(ids: Set<String>, block: (Note) -> Note) {
+        if (ids.isEmpty()) return
+        val now = clock()
+        val changed = mutableListOf<Note>()
+        _notes.value = _notes.value.map { note ->
+            if (note.id !in ids) return@map note
+            block(note.copy(updatedAt = now)).also { changed += it }
+        }
+        if (changed.isNotEmpty()) {
+            scope.launch { write { database.upsertAll(changed) } }
+        }
+    }
 
     fun deleteForever(id: String) {
         _notes.value = _notes.value.filterNot { it.id == id }
@@ -134,12 +157,16 @@ class NotesRepository(
     }
 
     fun appendAll(notes: List<Note>) {
-        val existingIds = _notes.value.map { it.id }.toSet()
-        val incoming = notes.filter { it.id !in existingIds }
+        val existingIds = _notes.value.mapTo(HashSet()) { it.id }
+        val incoming = notes
+            .distinctBy { it.id }
+            .filter { existingIds.add(it.id) }
         if (incoming.isEmpty()) return
         val merged = _notes.value + incoming
         _notes.value = merged
-        scope.launch { write { incoming.forEach { database.upsert(it) } } }
+        // One transaction for the whole import: hundreds of notes should not mean
+        // hundreds of SQLite fsyncs on the main-adjacent write path.
+        scope.launch { write { database.upsertAll(incoming) } }
     }
 
     private fun replaceInMemory(note: Note) {

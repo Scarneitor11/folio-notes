@@ -60,15 +60,18 @@ fun OverlayBlurEffect(active: Boolean = true) {
 @Composable
 fun Modifier.overlayBackdropBlur(active: Boolean, radius: Dp = 14.dp): Modifier {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return this
-    if (!LocalFolioSettings.current.blur) return this
+    val enabled = LocalFolioSettings.current.blur
     val motion = LocalFolioMotion.current
+    // Keep this call unconditional even when blur is disabled. A conditional
+    // animateDpAsState changes the composition slot count when the setting flips
+    // while a menu is open, which is a real "different number of composables" crash.
     val animated by animateDpAsState(
-        targetValue = if (active) radius else 0.dp,
+        targetValue = if (active && enabled) radius else 0.dp,
         animationSpec = tween(
             durationMillis = if (motion.reduced) 1 else motion.millis(220),
             easing = FastOutSlowInEasing,
         ),
         label = "overlayBlur",
     )
-    return this.blur(animated)
+    return if (enabled) this.blur(animated) else this
 }

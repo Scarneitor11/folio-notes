@@ -8,6 +8,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -97,6 +98,39 @@ class NotesRepositoryTest {
         assertEquals(listOf("new"), repository.note("a")!!.tags)
         assertEquals(listOf("new"), repository.note("b")!!.tags)
         assertEquals(listOf("new"), database.loadAll().first { it.id == "b" }.tags)
+    }
+
+    @Test
+    fun `archiveMany updates only selected notes and persists them`() {
+        repository.save(Note(id = "a", title = "a"))
+        repository.save(Note(id = "b", title = "b"))
+        repository.save(Note(id = "c", title = "c"))
+        clock = 12_345L
+
+        repository.archiveMany(setOf("a", "c"))
+
+        assertTrue(repository.note("a")!!.archived)
+        assertFalse(repository.note("b")!!.archived)
+        assertTrue(repository.note("c")!!.archived)
+        assertEquals(12_345L, repository.note("a")!!.updatedAt)
+        assertEquals(2, database.loadAll().count { it.archived })
+    }
+
+    @Test
+    fun `appendAll ignores existing and repeated ids`() {
+        repository.save(Note(id = "existing", title = "existing"))
+
+        repository.appendAll(
+            listOf(
+                Note(id = "existing", title = "replacement"),
+                Note(id = "new", title = "new"),
+                Note(id = "new", title = "duplicate"),
+            ),
+        )
+
+        assertEquals(listOf("existing", "new"), repository.notes.value.map { it.id }.sorted())
+        assertEquals(listOf("existing", "new"), database.loadAll().map { it.id }.sorted())
+        assertEquals("new", repository.note("new")!!.title)
     }
 
     @Test

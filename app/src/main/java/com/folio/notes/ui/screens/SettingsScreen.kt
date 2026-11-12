@@ -124,7 +124,7 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onExport: (Uri) -> Unit,
     onImport: (Uri) -> Unit,
-    onImportKeep: (Uri) -> Unit,
+    onImportNotes: (Uri) -> Unit,
     onEmptyTrash: () -> Unit,
     onSeedSamples: () -> Unit,
     modifier: Modifier = Modifier,
@@ -155,9 +155,9 @@ fun SettingsScreen(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> if (uri != null) onImport(uri) }
 
-    val keepImporter = rememberLauncherForActivityResult(
+    val notesImporter = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
-    ) { uri -> if (uri != null) onImportKeep(uri) }
+    ) { uri -> if (uri != null) onImportNotes(uri) }
 
     Box(modifier.fillMaxSize()) {
         AuroraBackground(Modifier.fillMaxSize(), accent = accent, blur = settings.blur)
@@ -502,15 +502,17 @@ fun SettingsScreen(
 
                     ActionRow(
                         icon = Icons.Rounded.CloudDownload,
-                        title = stringResource(R.string.settings_keep_import),
-                        subtitle = stringResource(R.string.settings_keep_import_sub),
+                        title = stringResource(R.string.settings_migrate),
+                        subtitle = stringResource(R.string.settings_migrate_sub),
                         onClick = {
                             haptic(Haptic.Tap)
-                            keepImporter.launch(
+                            notesImporter.launch(
                                 arrayOf(
                                     "application/zip",
                                     "application/json",
+                                    "application/xml",
                                     "text/html",
+                                    "text/markdown",
                                     "text/plain",
                                     "*/*",
                                 ),

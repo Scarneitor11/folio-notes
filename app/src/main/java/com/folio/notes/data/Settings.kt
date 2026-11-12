@@ -1,6 +1,7 @@
 package com.folio.notes.data
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,22 +65,22 @@ class SettingsStore(context: Context) {
     )
 
     private fun write(settings: FolioSettings) {
-        prefs.edit()
-            .putString(KEY_THEME, settings.themeMode.name)
-            .putBoolean(KEY_DYNAMIC, settings.dynamicColor)
-            .putInt(KEY_PALETTE, settings.paletteIndex)
-            .putFloat(KEY_CONTRAST, settings.contrast)
-            .putFloat(KEY_CORNER, settings.cornerScale)
-            .putFloat(KEY_FONT, settings.fontScale)
-            .putBoolean(KEY_SERIF, settings.serifTitles)
-            .putFloat(KEY_MOTION, settings.motionScale)
-            .putBoolean(KEY_HAPTICS, settings.haptics)
-            .putBoolean(KEY_BLUR, settings.blur)
-            .putBoolean(KEY_REFRESH, settings.highRefresh)
-            .putBoolean(KEY_GRID, settings.grid)
-            .putInt(KEY_GRID_COLUMNS, settings.gridColumns)
-            .putString(KEY_SORT, settings.sortMode.name)
-            .apply()
+        prefs.edit {
+            putString(KEY_THEME, settings.themeMode.name)
+            putBoolean(KEY_DYNAMIC, settings.dynamicColor)
+            putInt(KEY_PALETTE, settings.paletteIndex)
+            putFloat(KEY_CONTRAST, settings.contrast)
+            putFloat(KEY_CORNER, settings.cornerScale)
+            putFloat(KEY_FONT, settings.fontScale)
+            putBoolean(KEY_SERIF, settings.serifTitles)
+            putFloat(KEY_MOTION, settings.motionScale)
+            putBoolean(KEY_HAPTICS, settings.haptics)
+            putBoolean(KEY_BLUR, settings.blur)
+            putBoolean(KEY_REFRESH, settings.highRefresh)
+            putBoolean(KEY_GRID, settings.grid)
+            putInt(KEY_GRID_COLUMNS, settings.gridColumns)
+            putString(KEY_SORT, settings.sortMode.name)
+        }
     }
 
     companion object {

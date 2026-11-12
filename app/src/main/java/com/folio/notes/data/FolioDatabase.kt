@@ -4,6 +4,7 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import androidx.core.database.sqlite.transaction
 
 /**
  * A small hand-written SQLite store. Notes are few and text-only, so this keeps
@@ -24,26 +25,22 @@ class FolioDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VE
      * a default, or the copy will fail on rows that predate it.
      */
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.beginTransaction()
-        try {
-            val existing = db.rawQuery("PRAGMA table_info($TABLE)", null).use { cursor ->
+        db.transaction {
+            val existing = rawQuery("PRAGMA table_info($TABLE)", null).use { cursor ->
                 val name = cursor.getColumnIndexOrThrow("name")
                 buildSet { while (cursor.moveToNext()) add(cursor.getString(name)) }
             }
             val carried = COLUMNS.filter { it in existing }
             // The index travels with the renamed table, so drop it before rebuilding.
-            db.execSQL("DROP INDEX IF EXISTS idx_notes_updated")
-            db.execSQL("ALTER TABLE $TABLE RENAME TO ${TABLE}_old")
-            db.execSQL(CREATE_NOTES)
-            db.execSQL(CREATE_INDEX)
+            execSQL("DROP INDEX IF EXISTS idx_notes_updated")
+            execSQL("ALTER TABLE $TABLE RENAME TO ${TABLE}_old")
+            execSQL(CREATE_NOTES)
+            execSQL(CREATE_INDEX)
             if (carried.isNotEmpty()) {
                 val columns = carried.joinToString(", ")
-                db.execSQL("INSERT INTO $TABLE ($columns) SELECT $columns FROM ${TABLE}_old")
+                execSQL("INSERT INTO $TABLE ($columns) SELECT $columns FROM ${TABLE}_old")
             }
-            db.execSQL("DROP TABLE ${TABLE}_old")
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
+            execSQL("DROP TABLE ${TABLE}_old")
         }
     }
 
@@ -82,19 +79,30 @@ class FolioDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VE
     }
 
     fun upsert(note: Note) {
-        val values = ContentValues().apply {
-            put("id", note.id)
-            put("title", note.title)
-            put("body", note.body)
-            put("tint", note.tint)
-            put("pinned", if (note.pinned) 1 else 0)
-            put("archived", if (note.archived) 1 else 0)
-            put("trashed", if (note.trashed) 1 else 0)
-            put("tags", encodeTags(note.tags))
-            put("created_at", note.createdAt)
-            put("updated_at", note.updatedAt)
+        writableDatabase.insertWithOnConflict(TABLE, null, valuesOf(note), SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    /** Batched import/restore path: one transaction instead of one fsync per note. */
+    fun upsertAll(notes: List<Note>) {
+        if (notes.isEmpty()) return
+        writableDatabase.transaction {
+            notes.forEach {
+                insertWithOnConflict(TABLE, null, valuesOf(it), SQLiteDatabase.CONFLICT_REPLACE)
+            }
         }
-        writableDatabase.insertWithOnConflict(TABLE, null, values, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    private fun valuesOf(note: Note): ContentValues = ContentValues().apply {
+        put("id", note.id)
+        put("title", note.title)
+        put("body", note.body)
+        put("tint", note.tint)
+        put("pinned", if (note.pinned) 1 else 0)
+        put("archived", if (note.archived) 1 else 0)
+        put("trashed", if (note.trashed) 1 else 0)
+        put("tags", encodeTags(note.tags))
+        put("created_at", note.createdAt)
+        put("updated_at", note.updatedAt)
     }
 
     fun delete(id: String) {
@@ -106,14 +114,11 @@ class FolioDatabase(context: Context) : SQLiteOpenHelper(context, NAME, null, VE
     }
 
     fun replaceAll(notes: List<Note>) {
-        val db = writableDatabase
-        db.beginTransaction()
-        try {
-            db.delete(TABLE, null, null)
-            notes.forEach { upsert(it) }
-            db.setTransactionSuccessful()
-        } finally {
-            db.endTransaction()
+        writableDatabase.transaction {
+            delete(TABLE, null, null)
+            notes.forEach {
+                insertWithOnConflict(TABLE, null, valuesOf(it), SQLiteDatabase.CONFLICT_REPLACE)
+            }
         }
     }
 

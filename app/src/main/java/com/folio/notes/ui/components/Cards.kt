@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -37,6 +38,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -72,6 +74,7 @@ fun NoteCard(
      * grid stays legible instead of breaking words down the middle.
      */
     narrow: Boolean = false,
+    selected: Boolean = false,
     /**
      * Reports where the card sits in the window, once, whenever it is laid out. The
      * tap handler reads that rect so the editor can grow out of this exact tile
@@ -143,14 +146,18 @@ fun NoteCard(
                 ),
             )
             .border(
-                width = 1.dp,
-                brush = Brush.linearGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = if (dark) 0.13f else 0.62f),
-                        Color.White.copy(alpha = if (dark) 0.04f else 0.18f),
-                        Color.Transparent,
-                    ),
-                ),
+                width = if (selected) 2.dp else 1.dp,
+                brush = if (selected) {
+                    SolidColor(accent.primary)
+                } else {
+                    Brush.linearGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (dark) 0.13f else 0.62f),
+                            Color.White.copy(alpha = if (dark) 0.04f else 0.18f),
+                            Color.Transparent,
+                        ),
+                    )
+                },
                 shape = shape,
             )
             .combinedClickable(
@@ -211,6 +218,16 @@ fun NoteCard(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
+            // A selected card keeps a single unmistakable signal in the title row.
+            if (selected) {
+                Spacer(Modifier.width(5.dp))
+                Icon(
+                    imageVector = Icons.Rounded.CheckCircle,
+                    contentDescription = stringResource(R.string.note_selected),
+                    tint = accent.primary,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
             // A 3-up card has no room for a pin beside the title without breaking
             // "Welcome" mid-word, so the pin moves down to the date line.
             if (note.pinned && !narrow) {

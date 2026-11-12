@@ -55,6 +55,8 @@ import com.folio.notes.data.NotesRepository
 import com.folio.notes.data.SortMode
 import com.folio.notes.logic.FolioSchemes
 import com.folio.notes.logic.KeepImport
+import com.folio.notes.logic.MarkdownImport
+import com.folio.notes.logic.MigrationImport
 import com.folio.notes.logic.asFolioNote
 import com.folio.notes.ui.components.FolioDialog
 import com.folio.notes.ui.components.FolioDialogActions
@@ -144,6 +146,13 @@ fun FolioRoot(
     var sort by remember { mutableStateOf(settings.sortMode) }
     var sheetNote by remember { mutableStateOf<Note?>(null) }
     var pending by remember { mutableStateOf<Pending?>(null) }
+    var selecting by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    fun finishSelection() {
+        selecting = false
+        selectedIds = emptySet()
+    }
 
     /** Blank notes are drafts, not documents: leaving one throws it away. */
     fun persist(note: Note) {
@@ -169,8 +178,8 @@ fun FolioRoot(
         scope.launch { snackbar.showSnackbar(message) }
     }
 
-    fun importKeep(uri: Uri) {
-        toast(context.getString(R.string.toast_keep_importing))
+    fun importNotes(uri: Uri) {
+        toast(context.getString(R.string.toast_migrating))
         scope.launch {
             val parsed = withContext(Dispatchers.IO) {
                 runCatching {
@@ -181,12 +190,20 @@ fun FolioRoot(
                         mime == "application/x-zip-compressed"
                     context.contentResolver.openInputStream(uri)?.use { stream ->
                         if (isZip) {
-                            // Keep archives can contain large attachments; parse the ZIP
-                            // entries directly and never load those attachment bytes.
-                            KeepImport.parseZip(stream)
+                            // Try a Markdown vault first; if it has no Markdown entries,
+                            // reopen the provider and use the Keep Takeout parser. This
+                            // keeps one picker for both migration formats.
+                            val markdown = MarkdownImport.parseZip(stream)
+                            if (markdown.notes.isNotEmpty()) {
+                                markdown
+                            } else {
+                                context.contentResolver.openInputStream(uri)?.use { retry ->
+                                    KeepImport.parseZip(retry)
+                                } ?: error("empty import")
+                            }
                         } else {
                             val bytes = KeepImport.readLimited(stream) ?: error("too large")
-                            KeepImport.parse(name, bytes)
+                            MigrationImport.parse(name, mime, bytes)
                         }
                     } ?: error("empty import")
                 }.getOrNull()
@@ -194,7 +211,7 @@ fun FolioRoot(
             if (parsed == null || parsed.notes.isEmpty()) {
                 toast(
                     context.getString(
-                        if (parsed == null) R.string.toast_keep_import_failed else R.string.toast_keep_import_empty,
+                        if (parsed == null) R.string.toast_migrate_failed else R.string.toast_migrate_empty,
                     ),
                 )
                 return@launch
@@ -203,12 +220,18 @@ fun FolioRoot(
             repository.appendAll(parsed.notes.map { it.asFolioNote() })
             val added = repository.notes.value.size - before
             if (added <= 0) {
-                toast(context.getString(R.string.toast_keep_none_new))
+                toast(context.getString(R.string.toast_migrate_none_new))
             } else {
-                toast(context.resources.getQuantityString(R.plurals.toast_keep_imported, added, added))
+                toast(migratedMessage(context, added))
             }
         }
     }
+
+    // Selection belongs to Home; navigating away must not leave stale checkmarks.
+    LaunchedEffect(screen) {
+        if (screen != Screen.Home) finishSelection()
+    }
+    BackHandler(enabled = selecting) { finishSelection() }
 
     // The editor handles its own back press so a pending autosave is flushed first.
     BackHandler(enabled = screen != Screen.Home && screen !is Screen.Editor) {
@@ -356,6 +379,38 @@ fun FolioRoot(
                     onOpenTags = { screen = Screen.Tags },
                     snackbarVisible = snackbar.currentSnackbarData != null,
                     onCardBounds = { note, rect -> cardBounds[note.id] = rect },
+                    selecting = selecting,
+                    selectedIds = selectedIds,
+                    onStartSelecting = {
+                        selecting = true
+                        selectedIds = emptySet()
+                    },
+                    onToggleSelected = { id ->
+                        selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
+                    },
+                    onCancelSelection = ::finishSelection,
+                    onBulkPin = {
+                        val count = selectedIds.size
+                        repository.pinMany(selectedIds)
+                        finishSelection()
+                        if (count > 0) toast(bulkUpdatedMessage(context, count))
+                    },
+                    onBulkArchive = {
+                        val count = selectedIds.size
+                        if (feed == Feed.ARCHIVED) {
+                            repository.unarchiveMany(selectedIds)
+                        } else {
+                            repository.archiveMany(selectedIds)
+                        }
+                        finishSelection()
+                        if (count > 0) toast(bulkUpdatedMessage(context, count))
+                    },
+                    onBulkTrash = {
+                        val count = selectedIds.size
+                        repository.trashMany(selectedIds)
+                        finishSelection()
+                        if (count > 0) toast(bulkUpdatedMessage(context, count))
+                    },
                 )
 
                 is Screen.Editor -> {
@@ -418,9 +473,15 @@ fun FolioRoot(
                     trashedCount = notes.count { it.trashed },
                     versionName = versionName,
                     onBack = { screen = Screen.Home },
-                    onExport = { uri -> exportTo(context, uri, notes, ::toast) },
-                    onImport = { uri -> importFrom(context, uri, repository, ::toast) },
-                    onImportKeep = ::importKeep,
+                    onExport = { uri ->
+                        // Document providers can be slow and backups can be large;
+                        // keep both the stream and the JSON encode off the UI thread.
+                        scope.launch { exportTo(context, uri, notes, ::toast) }
+                    },
+                    onImport = { uri ->
+                        scope.launch { importFrom(context, uri, repository, ::toast) }
+                    },
+                    onImportNotes = ::importNotes,
                     onEmptyTrash = {
                         pending = Pending.ConfirmEmptyTrash(notes.count { it.trashed })
                     },
@@ -532,17 +593,26 @@ fun FolioRoot(
     }
 }
 
-private fun exportTo(
+private fun migratedMessage(context: Context, count: Int): String =
+    context.resources.getQuantityString(R.plurals.toast_migrated, count, count)
+
+private fun bulkUpdatedMessage(context: Context, count: Int): String =
+    context.resources.getQuantityString(R.plurals.toast_bulk_updated, count, count)
+
+private suspend fun exportTo(
     context: Context,
     uri: Uri,
     notes: List<Note>,
     toast: (String) -> Unit,
 ) {
-    runCatching {
-        context.contentResolver.openOutputStream(uri)?.use { stream ->
-            stream.write(BackupCodec.encode(notes).toByteArray(Charsets.UTF_8))
+    val result = withContext(Dispatchers.IO) {
+        runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { stream ->
+                stream.write(BackupCodec.encode(notes).toByteArray(Charsets.UTF_8))
+            } ?: error("empty output")
         }
-    }.onSuccess {
+    }
+    result.onSuccess {
         val count = context.resources.getQuantityString(R.plurals.note_count, notes.size, notes.size)
         toast(context.getString(R.string.toast_exported, count))
     }.onFailure {
@@ -560,20 +630,25 @@ private fun readDisplayName(context: Context, uri: Uri): String {
     return name?.takeIf { it.isNotBlank() } ?: uri.lastPathSegment ?: "google-keep-import"
 }
 
-private fun importFrom(
+private suspend fun importFrom(
     context: Context,
     uri: Uri,
     repository: NotesRepository,
     toast: (String) -> Unit,
 ) {
-    runCatching {
-        val text = context.contentResolver.openInputStream(uri)?.use { stream ->
-            stream.readBytes().toString(Charsets.UTF_8)
-        }.orEmpty()
-        val incoming = BackupCodec.decode(text)
-        repository.appendAll(incoming)
-        incoming.size
-    }.onSuccess { count ->
+    val result = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = context.contentResolver.openInputStream(uri)?.use { stream ->
+                // Same bounded read as the migration importer; a malformed or huge
+                // file must fail with a snackbar rather than exhausting the heap.
+                KeepImport.readLimited(stream) ?: error("backup too large")
+            } ?: error("empty input")
+            val incoming = BackupCodec.decode(bytes.toString(Charsets.UTF_8))
+            repository.appendAll(incoming)
+            incoming.size
+        }
+    }
+    result.onSuccess { count ->
         val notes = context.resources.getQuantityString(R.plurals.note_count, count, count)
         toast(context.getString(R.string.toast_imported, notes))
     }.onFailure {

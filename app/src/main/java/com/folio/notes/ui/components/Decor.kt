@@ -234,12 +234,16 @@ fun Reveal(
     content: @Composable () -> Unit,
 ) {
     val motion = LocalFolioMotion.current
-    var visible by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!motion.reduced && index < 14) {
+    // Only the first screenful gets an entrance. Lazy lists create items as they
+    // scroll into view, and animating every one of those made a long library feel
+    // like it was continuously loading instead of simply moving.
+    val animateIn = index in 0 until 14 && !motion.reduced
+    var visible by remember(animateIn) { mutableStateOf(!animateIn) }
+    LaunchedEffect(animateIn, index) {
+        if (animateIn) {
             delay((index.coerceAtLeast(0) * 22L * (1f / motion.scale.coerceIn(0.5f, 2f))).toLong())
+            visible = true
         }
-        visible = true
     }
     val progress by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
@@ -306,7 +310,7 @@ fun MiniIconButton(
     modifier: Modifier = Modifier,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     container: Color = MaterialTheme.colorScheme.surface.copy(alpha = 0.65f),
-    size: Dp = 42.dp,
+    size: Dp = 48.dp,
     enabled: Boolean = true,
 ) {
     val interaction = remember { MutableInteractionSource() }

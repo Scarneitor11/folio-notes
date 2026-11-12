@@ -15,7 +15,7 @@ object NoteQuery {
         query: String = "",
         tag: String? = null,
     ): List<Note> {
-        val needle = query.trim().lowercase()
+        val needle = query.trim()
         val filtered = notes.filter { note ->
             val feedOk = when (feed) {
                 Feed.ALL -> !note.trashed && !note.archived
@@ -26,9 +26,11 @@ object NoteQuery {
             if (!feedOk) return@filter false
             if (tag != null && note.tags.none { it.equals(tag, ignoreCase = true) }) return@filter false
             if (needle.isEmpty()) return@filter true
-            note.title.lowercase().contains(needle) ||
-                note.body.lowercase().contains(needle) ||
-                note.tags.any { it.lowercase().contains(needle) }
+            // contains(ignoreCase = true) avoids allocating a second copy of every
+            // note body just to search it; that allocation was measurable on long notes.
+            note.title.contains(needle, ignoreCase = true) ||
+                note.body.contains(needle, ignoreCase = true) ||
+                note.tags.any { it.contains(needle, ignoreCase = true) }
         }
         val sorted = sorted(filtered, sort)
         if (feed == Feed.ALL || feed == Feed.PINNED) {
@@ -41,8 +43,16 @@ object NoteQuery {
         SortMode.UPDATED_DESC -> notes.sortedByDescending { it.updatedAt }
         SortMode.UPDATED_ASC -> notes.sortedBy { it.updatedAt }
         SortMode.CREATED_DESC -> notes.sortedByDescending { it.createdAt }
-        SortMode.TITLE_ASC -> notes.sortedBy { titleOf(it).lowercase() }
-        SortMode.TITLE_DESC -> notes.sortedByDescending { titleOf(it).lowercase() }
+        // Derive each title once. A comparator that calls titleOf() on every
+        // comparison reparses blank bodies O(n log n) times instead of O(n).
+        SortMode.TITLE_ASC -> notes
+            .map { it to titleOf(it).lowercase() }
+            .sortedBy { it.second }
+            .map { it.first }
+        SortMode.TITLE_DESC -> notes
+            .map { it to titleOf(it).lowercase() }
+            .sortedByDescending { it.second }
+            .map { it.first }
     }
 
     fun titleOf(note: Note): String =

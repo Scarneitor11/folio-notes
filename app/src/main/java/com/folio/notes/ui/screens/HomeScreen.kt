@@ -12,6 +12,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,6 +25,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,9 +39,17 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridState
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Archive
+import androidx.compose.material.icons.rounded.Checklist
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Sell
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Unarchive
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -49,8 +60,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -76,6 +89,7 @@ import com.folio.notes.ui.components.RollingContent
 import com.folio.notes.ui.components.SearchField
 import com.folio.notes.ui.components.SortButton
 import com.folio.notes.ui.components.TagStrip
+import com.folio.notes.ui.components.clickableNoRipple
 import com.folio.notes.ui.theme.Fraunces
 import com.folio.notes.ui.theme.LocalAccent
 import com.folio.notes.ui.theme.LocalFolioMotion
@@ -101,6 +115,14 @@ fun HomeScreen(
     snackbarVisible: Boolean = false,
     /** Where each tile sits in the window, so the editor can unfold out of it. */
     onCardBounds: (Note, Rect) -> Unit = { _, _ -> },
+    selecting: Boolean = false,
+    selectedIds: Set<String> = emptySet(),
+    onStartSelecting: () -> Unit = {},
+    onToggleSelected: (String) -> Unit = {},
+    onCancelSelection: () -> Unit = {},
+    onBulkPin: () -> Unit = {},
+    onBulkArchive: () -> Unit = {},
+    onBulkTrash: () -> Unit = {},
 ) {
     val settings = LocalFolioSettings.current
     val accent = LocalAccent.current
@@ -125,6 +147,12 @@ fun HomeScreen(
     // and incoming lists never share a LazyListState while the pan crossfades.
     val gridStates = remember { mutableMapOf<Feed, LazyStaggeredGridState>() }
     val listStates = remember { mutableMapOf<Feed, LazyListState>() }
+    val activate: (Note) -> Unit = { note ->
+        if (selecting) onToggleSelected(note.id) else onOpen(note)
+    }
+    val longActivate: (Note) -> Unit = { note ->
+        if (selecting) onToggleSelected(note.id) else onLongPress(note)
+    }
 
     Box(modifier.fillMaxSize()) {
         AuroraBackground(
@@ -154,6 +182,16 @@ fun HomeScreen(
                     color = scheme.onSurface.copy(alpha = 0.55f),
                 )
                 Spacer(Modifier.weight(1f))
+                MiniIconButton(
+                    icon = if (selecting) Icons.Rounded.Close else Icons.Rounded.Checklist,
+                    contentDescription = stringResource(
+                        if (selecting) R.string.home_cancel_selection else R.string.home_select_notes,
+                    ),
+                    onClick = if (selecting) onCancelSelection else onStartSelecting,
+                    enabled = selecting || (feed != Feed.TRASH && visible.isNotEmpty()),
+                    container = scheme.surface.copy(alpha = if (settings.blur) 0.55f else 0.9f),
+                )
+                Spacer(Modifier.width(8.dp))
                 MiniIconButton(
                     icon = Icons.Rounded.Sell,
                     contentDescription = stringResource(R.string.home_open_tags),
@@ -233,29 +271,39 @@ fun HomeScreen(
                 }
 
                 Spacer(Modifier.height(18.dp))
-                Rise(index = 2) { SearchField(value = query, onValueChange = onQueryChange) }
-                Spacer(Modifier.height(14.dp))
-                Rise(index = 3) {
-                    FeedPills(feed = feed, onChange = onFeedChange, counts = counts)
-                }
-                if (tags.isNotEmpty()) {
-                    Spacer(Modifier.height(12.dp))
-                    Rise(index = 4) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            TagStrip(
-                                tags = tags,
-                                selected = tag,
-                                onSelect = onTagChange,
-                                modifier = Modifier.weight(1f),
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            SortButton(sort = sort, onChange = onSortChange)
-                        }
-                    }
+                if (selecting) {
+                    SelectionToolbar(
+                        count = selectedIds.size,
+                        archived = feed == Feed.ARCHIVED,
+                        onPin = onBulkPin,
+                        onArchive = onBulkArchive,
+                        onTrash = onBulkTrash,
+                    )
                 } else {
-                    Rise(index = 4) {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                            SortButton(sort = sort, onChange = onSortChange)
+                    Rise(index = 2) { SearchField(value = query, onValueChange = onQueryChange) }
+                    Spacer(Modifier.height(14.dp))
+                    Rise(index = 3) {
+                        FeedPills(feed = feed, onChange = onFeedChange, counts = counts)
+                    }
+                    if (tags.isNotEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Rise(index = 4) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TagStrip(
+                                    tags = tags,
+                                    selected = tag,
+                                    onSelect = onTagChange,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                SortButton(sort = sort, onChange = onSortChange)
+                            }
+                        }
+                    } else {
+                        Rise(index = 4) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                SortButton(sort = sort, onChange = onSortChange)
+                            }
                         }
                     }
                 }
@@ -352,7 +400,7 @@ fun HomeScreen(
                                 ) {
                                     itemsIndexed(rows, key = { _, note -> note.id }) { index, note ->
                                         Reveal(
-                                            index = index % 10,
+                                            index = index,
                                             modifier = Modifier.animateItem(
                                                 fadeInSpec = null,
                                                 fadeOutSpec = tween(motion.millis(140)),
@@ -366,8 +414,9 @@ fun HomeScreen(
                                                 note = note,
                                                 index = index,
                                                 narrow = narrowCards,
-                                                onClick = { onOpen(note) },
-                                                onLongClick = { onLongPress(note) },
+                                                selected = selecting && note.id in selectedIds,
+                                                onClick = { activate(note) },
+                                                onLongClick = { longActivate(note) },
                                                 onBounds = { onCardBounds(note, it) },
                                             )
                                         }
@@ -392,7 +441,7 @@ fun HomeScreen(
                                     ) {
                                         itemsIndexed(rows, key = { _, note -> note.id }) { index, note ->
                                             Reveal(
-                                                index = index % 10,
+                                                index = index,
                                                 modifier = Modifier.animateItem(
                                                     fadeInSpec = null,
                                                     fadeOutSpec = tween(motion.millis(140)),
@@ -406,8 +455,9 @@ fun HomeScreen(
                                                     note = note,
                                                     index = index,
                                                     compact = false,
-                                                    onClick = { onOpen(note) },
-                                                    onLongClick = { onLongPress(note) },
+                                                    selected = selecting && note.id in selectedIds,
+                                                    onClick = { activate(note) },
+                                                    onLongClick = { longActivate(note) },
                                                     onBounds = { onCardBounds(note, it) },
                                                 )
                                             }
@@ -435,17 +485,124 @@ fun HomeScreen(
             animationSpec = motion.bounce(0.45f, 420f),
             label = "fabEnter",
         )
-        NewNoteFab(
-            onClick = onNew,
-            modifier = Modifier
-                .graphicsLayer {
-                    scaleX = fabPop
-                    scaleY = fabPop
-                    alpha = fabPop.coerceIn(0f, 1f)
-                }
-                .align(Alignment.BottomEnd)
-                .navigationBarsPadding()
-                .padding(end = 20.dp, bottom = fabLift),
+        if (!selecting) {
+            NewNoteFab(
+                onClick = onNew,
+                modifier = Modifier
+                    .graphicsLayer {
+                        scaleX = fabPop
+                        scaleY = fabPop
+                        alpha = fabPop.coerceIn(0f, 1f)
+                    }
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 20.dp, bottom = fabLift),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectionToolbar(
+    count: Int,
+    archived: Boolean,
+    onPin: () -> Unit,
+    onArchive: () -> Unit,
+    onTrash: () -> Unit,
+) {
+    val settings = LocalFolioSettings.current
+    val scheme = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape((18 * settings.cornerScale).dp)
+    val enabled = count > 0
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(scheme.surfaceContainerLow.copy(alpha = 0.88f))
+            .border(1.dp, scheme.outlineVariant.copy(alpha = 0.45f), shape)
+            .padding(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = pluralStringResource(R.plurals.home_selected_count, count, count),
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = scheme.onSurface,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                text = stringResource(R.string.home_selection_hint),
+                style = MaterialTheme.typography.labelSmall,
+                color = scheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
+        }
+        Spacer(Modifier.height(7.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            SelectionAction(
+                icon = Icons.Rounded.PushPin,
+                label = stringResource(R.string.home_bulk_pin),
+                enabled = enabled,
+                onClick = onPin,
+                modifier = Modifier.weight(1f),
+            )
+            SelectionAction(
+                icon = if (archived) Icons.Rounded.Unarchive else Icons.Rounded.Archive,
+                label = stringResource(
+                    if (archived) R.string.home_bulk_unarchive else R.string.home_bulk_archive,
+                ),
+                enabled = enabled,
+                onClick = onArchive,
+                modifier = Modifier.weight(1f),
+            )
+            SelectionAction(
+                icon = Icons.Rounded.Delete,
+                label = stringResource(R.string.home_bulk_trash),
+                enabled = enabled,
+                danger = true,
+                onClick = onTrash,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectionAction(
+    icon: ImageVector,
+    label: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    danger: Boolean = false,
+) {
+    val scheme = MaterialTheme.colorScheme
+    val interaction = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val tint = (if (danger) scheme.error else scheme.onSurfaceVariant)
+        .copy(alpha = if (enabled) 1f else 0.35f)
+    Row(
+        modifier = modifier
+            .heightIn(min = 42.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(scheme.surfaceContainerHigh.copy(alpha = 0.62f))
+            .clickableNoRipple(interaction, enabled, onClick)
+            .padding(horizontal = 7.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = tint,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
+            color = tint,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }

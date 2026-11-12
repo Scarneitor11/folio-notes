@@ -1,6 +1,6 @@
 # Folio Notes
 
-Folio is a local-first notes app for Android, built with Kotlin and Jetpack Compose. It pairs a quiet, paper-like editor with a flexible home feed: markdown-lite formatting, preview mode, search and replace, checklists, templates, tags, pinning, archiving, trash, and JSON backup/restore. It can import Google Keep Takeout archives (JSON, HTML, and ZIP) while preserving checklists, labels, colors, pinned/archive/trash state, and timestamps, and it can receive text shared from other apps.
+Folio is a local-first notes app for Android, built with Kotlin and Jetpack Compose. It pairs a quiet, paper-like editor with a flexible home feed: markdown-lite formatting, preview mode, search and replace, checklists, templates, tags, pinning, archiving, trash, multi-select batch actions, and JSON backup/restore. It can bring notes in from Google Keep Takeout (JSON, HTML, and ZIP), Evernote ENEX, Markdown with YAML front matter, Markdown vault ZIPs, HTML, or plain text, preserving checklists, labels, colors, pinned/archive/trash state, and timestamps where the source provides them. Text can also be shared into Folio from other apps.
 
 ## Requirements
 
@@ -26,8 +26,8 @@ Release builds require signing configuration at `~/.folio-signing/keystore.prope
 - Notes are stored only in the app's private SQLite database.
 - The app requests only the vibration permission; it has no network permission and no analytics.
 - Android backup is disabled, and backup/restore is user-controlled through exported JSON.
-- Google Keep imports are parsed entirely on the device; no upload or network permission is involved.
+- Google Keep, Evernote, and Markdown imports are parsed entirely on the device; no upload or network permission is involved.
 
 ## Verification
 
-The test suite covers editing operations, list continuation, templates, search/replace, persistence, backup codecs, responsive layout, navigation, and motion helpers. Lint runs with `abortOnError = true`, and release builds use R8 with resource shrinking.
+The test suite covers editing operations, list continuation, templates, search/replace, persistence, backup codecs, responsive layout, navigation, motion helpers, and Google Keep, Evernote, and Markdown migration. Lint runs with `abortOnError = true`, and release builds use R8 with resource shrinking.

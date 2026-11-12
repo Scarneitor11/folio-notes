@@ -342,7 +342,7 @@ object KeepImport {
             """(?is)<div[^>]*\bclass\s*=\s*["'][^"']*\b${Regex.escape(name)}\b[^"']*["'][^>]*>(.*?)</div\s*>""",
         ).find(html)?.groupValues?.get(1)
 
-    private fun htmlToMarkdown(raw: String): String {
+    internal fun htmlToMarkdown(raw: String): String {
         var text = raw
         text = SCRIPT_STYLE.replace(text, "")
         text = BR.replace(text, "\n")

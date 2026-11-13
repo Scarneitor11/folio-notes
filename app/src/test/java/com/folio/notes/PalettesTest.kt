@@ -53,6 +53,56 @@ class PalettesTest {
     }
 
     @Test
+    fun inkOnReadsBlackFillWithPaper() {
+        // A dynamic-colour primary can be near black; the selected chip label
+        // used to be fixed dark ink and vanished into it.
+        assertEquals(0xFFFFF9F2.toInt(), ColorMath.inkOn(Color.Black).toArgb())
+        assertEquals(0xFFFFF9F2.toInt(), ColorMath.inkOn(Color(0xFF14100C)).toArgb())
+        assertEquals(0xFF17130F.toInt(), ColorMath.inkOn(Color.White).toArgb())
+    }
+
+    @Test
+    fun inkOnAlwaysBeatsOnColorOnMidTones() {
+        val mids = listOf(0xFF5C97AC, 0xFF7A7A7A, 0xFF9C7A5E, 0xFF2B2B2B).map { Color(it) }
+        for (bg in mids) {
+            val l = bg.luminance()
+            val picked = ColorMath.inkOn(bg).luminance()
+            val other = if (picked > l) ColorMath.inkLow.luminance() else ColorMath.inkHigh.luminance()
+            val ratio = { fg: Float -> (maxOf(l, fg) + 0.05f) / (minOf(l, fg) + 0.05f) }
+            assertTrue(ratio(picked) >= ratio(other))
+        }
+    }
+
+    @Test
+    fun inkOnKeepsTagChipsLegibleInDarkThemes() {
+        val chip = FolioSchemes.tagColor("personal", dark = true)
+        val ink = ColorMath.inkOn(chip)
+        val l = chip.luminance()
+        val ratio = (maxOf(l, ink.luminance()) + 0.05f) / (minOf(l, ink.luminance()) + 0.05f)
+        assertTrue(ratio >= 4.5f)
+    }
+
+    @Test
+    fun unselectedChipLabelPassesAaOverTheCompositeFill() {
+        // Unselected chips are the accent at 30% over the page. A near-black
+        // dynamic primary over paper lands on mid grey, where a fixed
+        // onSurfaceVariant label measured 3.9:1 on device.
+        val cases = listOf(
+            "light/dark-primary" to (0xFFF3F3F4 to 0xFF0C0C0C),
+            "dark/light-primary" to (0xFF121414 to 0xFFF3F3F3),
+            "light/accent" to (0xFFF3F3F4 to 0xFF5C97AC),
+        )
+        for ((name, pair) in cases) {
+            val (backdrop, accent) = pair
+            val painted = ColorMath.mix(Color(backdrop), Color(accent), 0.30f)
+            val ink = ColorMath.inkOn(painted)
+            val l = painted.luminance()
+            val ratio = (maxOf(l, ink.luminance()) + 0.05f) / (minOf(l, ink.luminance()) + 0.05f)
+            assertTrue("$name measured $ratio", ratio >= 4.5f)
+        }
+    }
+
+    @Test
     fun contrastOfZeroIsANoOp() {
         val color = Color(0xFF335577)
         assertEquals(color.toArgb(), ColorMath.contrast(color, 0f, dark = false).toArgb())

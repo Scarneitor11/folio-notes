@@ -31,6 +31,10 @@ object Palettes {
 }
 
 object ColorMath {
+    /** The two ink roles: warm near-black and warm paper. */
+    val inkLow: Color = Color(0xFF17130F)
+    val inkHigh: Color = Color(0xFFFFF9F2)
+
     fun mix(a: Color, b: Color, t: Float): Color {
         val f = t.coerceIn(0f, 1f)
         return Color(
@@ -42,7 +46,21 @@ object ColorMath {
     }
 
     fun onColor(background: Color): Color =
-        if (background.luminance() > 0.42f) Color(0xFF17130F) else Color(0xFFFFF9F2)
+        if (background.luminance() > 0.42f) inkLow else inkHigh
+
+    /**
+     * The stronger of the two ink roles on [background], by measured contrast
+     * ratio rather than a luminance guess. Palette accents keep the designed
+     * light-on-accent look through [onColor]; this is for colours that arrive at
+     * runtime — a dynamic-primary tag chip can be near black, and a fixed dark
+     * label on it is invisible.
+     */
+    fun inkOn(background: Color): Color {
+        val l = background.luminance()
+        val withDark = (l + 0.05f) / (inkLow.luminance() + 0.05f)
+        val withLight = (inkHigh.luminance() + 0.05f) / (l + 0.05f)
+        return if (withDark >= withLight) inkLow else inkHigh
+    }
 
     fun readable(accent: Color, dark: Boolean): Color =
         if (dark) mix(accent, Color.White, 0.45f) else mix(accent, Color.Black, 0.22f)

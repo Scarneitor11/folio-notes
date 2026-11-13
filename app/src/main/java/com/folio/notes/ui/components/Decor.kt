@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
+import com.folio.notes.logic.ColorMath
 import com.folio.notes.logic.FolioPalette
 import com.folio.notes.ui.theme.Fraunces
 import com.folio.notes.ui.theme.LocalFolioDark
@@ -368,10 +369,17 @@ fun TagChip(
     val shape = RoundedCornerShape(50)
     val interaction = remember { MutableInteractionSource() }
     val motion = LocalFolioMotion.current
+    val fillAlpha = if (selected) 0.95f else 0.30f
     val fill by animateColorAsState(
-        targetValue = if (selected) color.copy(alpha = 0.95f) else color.copy(alpha = 0.30f),
+        targetValue = color.copy(alpha = fillAlpha),
         animationSpec = spring(dampingRatio = 1f, stiffness = 900f),
         label = "chipFill",
+    )
+    // The label has to be chosen from the colour the eye actually sees, which is
+    // the tint composited over the page, not the raw accent. A near-black primary
+    // at 30% over paper is mid grey, and mid grey defeats a fixed onSurfaceVariant.
+    val ink = ColorMath.inkOn(
+        ColorMath.mix(MaterialTheme.colorScheme.background, color, fillAlpha),
     )
     val bump by animateFloatAsState(
         targetValue = if (selected) 1.06f else 1f,
@@ -416,7 +424,10 @@ fun TagChip(
             text = text,
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.SemiBold,
-            color = if (selected) Color(0xFF14100C) else MaterialTheme.colorScheme.onSurfaceVariant,
+            // Selected chips are filled with an accent that may itself be near
+            // black (dynamic colour from a dark wallpaper), so the label has to
+            // be picked from the fill instead of assumed to be dark ink.
+            color = ink,
             maxLines = 1,
         )
     }
